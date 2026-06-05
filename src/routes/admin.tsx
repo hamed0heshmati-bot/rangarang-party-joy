@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2, Plus, AlertTriangle } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { formatToman } from "@/lib/format";
 import { toast } from "sonner";
+import { adminSaveProduct, adminDeleteProduct } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -20,25 +22,20 @@ interface ProductRow {
 
 const empty = { name: "", category: "", price: 0, quantity: 0, image_url: "", description: "", is_featured: false };
 
-const ADMIN_PASSWORD = "666";
-
 function AdminPage() {
-  const [authed, setAuthed] = useState(() =>
-    typeof window !== "undefined" && sessionStorage.getItem("admin_ok") === "1"
-  );
   const [pw, setPw] = useState("");
-  if (!authed) {
+  const [authedPw, setAuthedPw] = useState<string | null>(() =>
+    typeof window !== "undefined" ? sessionStorage.getItem("admin_pw") : null
+  );
+  if (!authedPw) {
     return (
       <div className="container mx-auto px-4 py-20 grid place-items-center">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (pw === ADMIN_PASSWORD) {
-              sessionStorage.setItem("admin_ok", "1");
-              setAuthed(true);
-            } else {
-              toast.error("رمز عبور اشتباه است");
-            }
+            if (!pw) return;
+            sessionStorage.setItem("admin_pw", pw);
+            setAuthedPw(pw);
           }}
           className="bg-card rounded-3xl p-8 w-full max-w-sm shadow-festive border border-border/50 space-y-4"
         >
@@ -59,12 +56,14 @@ function AdminPage() {
       </div>
     );
   }
-  return <AdminPanel />;
+  return <AdminPanel password={authedPw} onAuthFail={() => { sessionStorage.removeItem("admin_pw"); setAuthedPw(null); }} />;
 }
 
-function AdminPanel() {
+function AdminPanel({ password, onAuthFail }: { password: string; onAuthFail: () => void }) {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [editing, setEditing] = useState<Partial<ProductRow> | null>(null);
+  const saveFn = useServerFn(adminSaveProduct);
+  const deleteFn = useServerFn(adminDeleteProduct);
 
   async function load() {
     const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false });
@@ -80,32 +79,39 @@ function AdminPanel() {
 
   async function save() {
     if (!editing) return;
-    const payload = {
-      name: editing.name ?? "",
-      category: editing.category ?? "",
-      price: Number(editing.price) || 0,
-      quantity: Number(editing.quantity) || 0,
-      image_url: editing.image_url || null,
-      description: editing.description || null,
-      is_featured: !!editing.is_featured,
-    };
-    if (!payload.name || !payload.category) return toast.error("نام و دسته‌بندی الزامی است");
-
-    const { error } = editing.id
-      ? await supabase.from("products").update(payload).eq("id", editing.id)
-      : await supabase.from("products").insert(payload);
-    if (error) return toast.error("خطا در ذخیره: " + error.message);
-    toast.success("ذخیره شد");
-    setEditing(null);
-    load();
+    if (!editing.name || !editing.category) return toast.error("نام و دسته‌بندی الزامی است");
+    try {
+      await saveFn({ data: { password, product: {
+        id: editing.id ?? null,
+        name: editing.name ?? "",
+        category: editing.category ?? "",
+        price: Number(editing.price) || 0,
+        quantity: Number(editing.quantity) || 0,
+        image_url: editing.image_url || null,
+        description: editing.description || null,
+        is_featured: !!editing.is_featured,
+      } } });
+      toast.success("ذخیره شد");
+      setEditing(null);
+      load();
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      toast.error("خطا در ذخیره: " + msg);
+      if (msg.includes("رمز عبور")) onAuthFail();
+    }
   }
 
   async function del(id: string) {
     if (!confirm("از حذف این محصول مطمئن هستید؟")) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) return toast.error("خطا در حذف: " + error.message);
-    toast.success("حذف شد");
-    load();
+    try {
+      await deleteFn({ data: { password, id } });
+      toast.success("حذف شد");
+      load();
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      toast.error("خطا در حذف: " + msg);
+      if (msg.includes("رمز عبور")) onAuthFail();
+    }
   }
 
   return (
