@@ -20,7 +20,49 @@ interface ProductRow {
 
 const empty = { name: "", category: "", price: 0, quantity: 0, image_url: "", description: "", is_featured: false };
 
+const ADMIN_PASSWORD = "666";
+
 function AdminPage() {
+  const [authed, setAuthed] = useState(() =>
+    typeof window !== "undefined" && sessionStorage.getItem("admin_ok") === "1"
+  );
+  const [pw, setPw] = useState("");
+  if (!authed) {
+    return (
+      <div className="container mx-auto px-4 py-20 grid place-items-center">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pw === ADMIN_PASSWORD) {
+              sessionStorage.setItem("admin_ok", "1");
+              setAuthed(true);
+            } else {
+              toast.error("رمز عبور اشتباه است");
+            }
+          }}
+          className="bg-card rounded-3xl p-8 w-full max-w-sm shadow-festive border border-border/50 space-y-4"
+        >
+          <h1 className="text-2xl font-black text-center">ورود به پنل مدیریت</h1>
+          <p className="text-sm text-muted-foreground text-center">رمز عبور را وارد کنید</p>
+          <input
+            type="password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            placeholder="رمز عبور"
+            className="w-full px-4 py-3 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-center"
+            autoFocus
+          />
+          <button type="submit" className="w-full py-3 rounded-full bg-gradient-festive text-primary-foreground font-bold shadow-festive">
+            ورود
+          </button>
+        </form>
+      </div>
+    );
+  }
+  return <AdminPanel />;
+}
+
+function AdminPanel() {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [editing, setEditing] = useState<Partial<ProductRow> | null>(null);
 
