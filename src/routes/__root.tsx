@@ -15,6 +15,7 @@ import { CartProvider } from "@/contexts/cart-context";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Toaster } from "@/components/ui/sonner";
+import { InstallPrompt } from "@/components/install-prompt";
 
 function NotFoundComponent() {
   return (
@@ -58,14 +59,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "رنگارنگ — فروشگاه آنلاین لوازم جشن و کادو" },
       { name: "description", content: "خرید آنلاین لوازم جشن، تولد، کادوهای خاص و وسایل فانتزی با ارسال سریع." },
+      { name: "theme-color", content: "#ec4899" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "رنگارنگ" },
       { property: "og:title", content: "رنگارنگ — لوازم جشن و کادو" },
       { property: "og:description", content: "فروشگاه آنلاین لوازم جشن، کادوهای خاص و وسایل فانتزی" },
       { property: "og:type", content: "website" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "icon", href: "/icon-192.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/icon-192.png" },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -96,6 +107,7 @@ function RootComponent() {
           <SiteFooter />
         </div>
         <Toaster position="top-center" richColors />
+        <InstallPrompt />
       </CartProvider>
     </QueryClientProvider>
   );
