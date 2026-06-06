@@ -1,30 +1,23 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 import { useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { Trash2, Plus, Minus, CheckCircle2, TicketPercent } from "lucide-react";
 import { useCart } from "@/contexts/cart-context";
 import { formatToman, isValidIranianMobile, toPersianDigits } from "@/lib/format";
-import { placeOrder, validateDiscount } from "@/lib/shop.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { usePageTitle } from "@/lib/use-page-title";
 
-export const Route = createFileRoute("/checkout")({
-  head: () => ({
-    meta: [
-      { title: "تکمیل سفارش — رنگارنگ" },
-      { name: "description", content: "تکمیل خرید و پرداخت سفارش از فروشگاه رنگارنگ" },
-    ],
-  }),
-  component: CheckoutPage,
-});
-
-function CheckoutPage() {
+export default function Checkout() {
+  usePageTitle("تکمیل سفارش — رنگارنگ", "تکمیل خرید و پرداخت سفارش از فروشگاه رنگارنگ");
   const { items, total, setQty, remove, clear } = useCart();
-  const navigate = useNavigate();
-  const placeOrderFn = useServerFn(placeOrder);
-  const validateFn = useServerFn(validateDiscount);
 
   const [form, setForm] = useState({
-    customer_name: "", phone: "", city: "", address: "", postal_code: "", notes: "",
+    customer_name: "",
+    phone: "",
+    city: "",
+    address: "",
+    postal_code: "",
+    notes: "",
   });
   const [discountCode, setDiscountCode] = useState("");
   const [discount, setDiscount] = useState<{ amount: number; code: string } | null>(null);
@@ -38,14 +31,28 @@ function CheckoutPage() {
     if (!discountCode.trim()) return;
     setDiscountErr("");
     try {
-      const res = await validateFn({ data: { code: discountCode, subtotal: total } });
-      if (res.ok) {
-        setDiscount({ amount: res.discount_amount, code: res.code });
-        toast.success(res.message);
-      } else {
+      const { data, error } = await supabase
+        .from("discount_codes")
+        .select("*")
+        .eq("code", discountCode.trim().toUpperCase())
+        .eq("is_active", true)
+        .maybeSingle();
+      if (error || !data) {
         setDiscount(null);
-        setDiscountErr(res.message);
+        setDiscountErr("کد تخفیف نامعتبر است");
+        return;
       }
+      if (data.usage_limit !== null && data.used_count >= data.usage_limit) {
+        setDiscount(null);
+        setDiscountErr("ظرفیت این کد تخفیف به پایان رسیده است");
+        return;
+      }
+      const amount =
+        data.type === "percent"
+          ? Math.floor((total * Number(data.value)) / 100)
+          : Math.min(Number(data.value), total);
+      setDiscount({ amount, code: data.code });
+      toast.success("کد تخفیف اعمال شد");
     } catch {
       setDiscountErr("خطا در بررسی کد");
     }
@@ -54,26 +61,38 @@ function CheckoutPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (items.length === 0) return toast.error("سبد خرید شما خالی است");
-    if (!isValidIranianMobile(form.phone)) return toast.error("شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)");
+    if (!isValidIranianMobile(form.phone))
+      return toast.error("شماره موبایل معتبر نیست (مثل ۰۹۱۲۳۴۵۶۷۸۹)");
     if (form.customer_name.trim().length < 2) return toast.error("نام را وارد کنید");
     if (form.city.trim().length < 2) return toast.error("شهر را وارد کنید");
     if (form.address.trim().length < 5) return toast.error("آدرس را کامل وارد کنید");
 
     setSubmitting(true);
     try {
-      const res = await placeOrderFn({
-        data: {
-          ...form,
-          postal_code: form.postal_code || null,
-          notes: form.notes || null,
-          discount_code: discount?.code ?? null,
-          items: items.map((i) => ({ product_id: i.id, quantity: i.quantity })),
-        },
-      });
-      setSuccess({ orderNumber: res.order_number });
+      const { data, error } = await supabase.rpc("place_order", {
+        p_customer_name: form.customer_name,
+        p_phone: form.phone,
+        p_city: form.city,
+        p_address: form.address,
+        p_postal_code: form.postal_code || "",
+        p_notes: form.notes || "",
+        p_discount_code: discount?.code ?? "",
+        p_items: items.map((i) => ({ product_id: i.id, quantity: i.quantity })),
+      } as never);
+      if (error) throw error;
+      const result = data as { order_number: number; total: number };
+      setSuccess({ orderNumber: result.order_number });
       clear();
-    } catch (err: any) {
-      toast.error(err?.message ?? "خطا در ثبت سفارش");
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message ?? "خطا در ثبت سفارش";
+      const friendly = msg.includes("insufficient_stock")
+        ? "موجودی یکی از محصولات کافی نیست"
+        : msg.includes("invalid_phone")
+        ? "شماره موبایل معتبر نیست"
+        : msg.includes("product_not_found")
+        ? "محصولی در سبد یافت نشد"
+        : "خطا در ثبت سفارش";
+      toast.error(friendly);
     } finally {
       setSubmitting(false);
     }
@@ -92,7 +111,10 @@ function CheckoutPage() {
           <p className="text-sm text-muted-foreground leading-7 mb-6">
             به‌زودی برای هماهنگی تحویل با شما تماس می‌گیریم. از خرید شما متشکریم 🎉
           </p>
-          <Link to="/" className="inline-block px-6 py-3 rounded-full bg-gradient-festive text-primary-foreground font-bold shadow-festive">
+          <Link
+            to="/"
+            className="inline-block px-6 py-3 rounded-full bg-gradient-festive text-primary-foreground font-bold shadow-festive"
+          >
             بازگشت به صفحه اصلی
           </Link>
         </div>
@@ -105,8 +127,10 @@ function CheckoutPage() {
       <h1 className="text-3xl md:text-4xl font-black mb-8">تکمیل سفارش</h1>
 
       <div className="grid lg:grid-cols-[1fr_380px] gap-6">
-        {/* FORM (left on RTL) */}
-        <form onSubmit={submit} className="bg-card rounded-3xl p-6 shadow-card border border-border/50 order-2 lg:order-1 space-y-5">
+        <form
+          onSubmit={submit}
+          className="bg-card rounded-3xl p-6 shadow-card border border-border/50 order-2 lg:order-1 space-y-5"
+        >
           <h2 className="text-xl font-bold mb-2">اطلاعات مشتری</h2>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -119,13 +143,15 @@ function CheckoutPage() {
           <Field label="آدرس کامل" value={form.address} onChange={(v) => setForm({ ...form, address: v })} multiline />
           <Field label="توضیحات سفارش" value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} optional multiline />
 
-          <button type="submit" disabled={submitting || items.length === 0}
-            className="w-full py-4 rounded-full bg-gradient-festive text-primary-foreground font-extrabold text-lg shadow-festive disabled:opacity-50 hover:scale-[1.01] transition">
+          <button
+            type="submit"
+            disabled={submitting || items.length === 0}
+            className="w-full py-4 rounded-full bg-gradient-festive text-primary-foreground font-extrabold text-lg shadow-festive disabled:opacity-50 hover:scale-[1.01] transition"
+          >
             {submitting ? "در حال ثبت..." : "ثبت سفارش"}
           </button>
         </form>
 
-        {/* CART SUMMARY (right on RTL) */}
         <aside className="bg-card rounded-3xl p-6 shadow-card border border-border/50 h-fit lg:sticky lg:top-20 order-1 lg:order-2 space-y-4">
           <h2 className="text-xl font-bold">سبد خرید شما</h2>
 
@@ -156,27 +182,45 @@ function CheckoutPage() {
                 ))}
               </ul>
 
-              {/* Discount */}
               <div className="pt-3 border-t border-border space-y-2">
                 <label className="text-sm font-bold flex items-center gap-1.5">
                   <TicketPercent className="w-4 h-4 text-gold" /> کد تخفیف
                 </label>
                 <div className="flex gap-2">
-                  <input value={discountCode} onChange={(e) => { setDiscountCode(e.target.value); setDiscount(null); setDiscountErr(""); }}
+                  <input
+                    value={discountCode}
+                    onChange={(e) => {
+                      setDiscountCode(e.target.value);
+                      setDiscount(null);
+                      setDiscountErr("");
+                    }}
                     placeholder="مثلاً RANG20"
-                    className="flex-1 px-3 py-2 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm" />
-                  <button type="button" onClick={applyDiscount}
-                    className="px-4 py-2 rounded-xl bg-gradient-gold text-gold-foreground text-sm font-bold">اعمال</button>
+                    className="flex-1 px-3 py-2 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyDiscount}
+                    className="px-4 py-2 rounded-xl bg-gradient-gold text-gold-foreground text-sm font-bold"
+                  >
+                    اعمال
+                  </button>
                 </div>
                 {discountErr && <p className="text-xs text-destructive">{discountErr}</p>}
                 {discount && <p className="text-xs text-success font-bold">✓ تخفیف {formatToman(discount.amount)} اعمال شد</p>}
               </div>
 
-              {/* Totals */}
               <div className="pt-3 border-t border-border space-y-1.5 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">جمع کل</span><span className="font-bold">{formatToman(total)}</span></div>
-                {discount && <div className="flex justify-between text-success"><span>تخفیف</span><span className="font-bold">- {formatToman(discount.amount)}</span></div>}
-                <div className="flex justify-between text-lg pt-2 border-t border-border"><span className="font-bold">قابل پرداخت</span><span className="font-black text-primary">{formatToman(finalTotal)}</span></div>
+                {discount && (
+                  <div className="flex justify-between text-success">
+                    <span>تخفیف</span>
+                    <span className="font-bold">- {formatToman(discount.amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg pt-2 border-t border-border">
+                  <span className="font-bold">قابل پرداخت</span>
+                  <span className="font-black text-primary">{formatToman(finalTotal)}</span>
+                </div>
               </div>
             </>
           )}
@@ -187,10 +231,21 @@ function CheckoutPage() {
 }
 
 function Field({
-  label, value, onChange, placeholder, optional, multiline, inputMode,
+  label,
+  value,
+  onChange,
+  placeholder,
+  optional,
+  multiline,
+  inputMode,
 }: {
-  label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; optional?: boolean; multiline?: boolean; inputMode?: "tel" | "text";
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  optional?: boolean;
+  multiline?: boolean;
+  inputMode?: "tel" | "text";
 }) {
   return (
     <label className="block">
@@ -198,11 +253,21 @@ function Field({
         {label} {optional && <span className="text-xs text-muted-foreground font-normal">(اختیاری)</span>}
       </span>
       {multiline ? (
-        <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-          rows={3} className="w-full px-3 py-2.5 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm resize-none" />
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={3}
+          className="w-full px-3 py-2.5 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm resize-none"
+        />
       ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} inputMode={inputMode}
-          className="w-full px-3 py-2.5 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm" />
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          className="w-full px-3 py-2.5 rounded-xl bg-muted border border-transparent focus:border-primary outline-none text-sm"
+        />
       )}
     </label>
   );

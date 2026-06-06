@@ -1,29 +1,27 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Sparkles, Gift, PartyPopper, Heart } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ProductCard, type ProductRow } from "@/components/product-card";
+import { usePageTitle } from "@/lib/use-page-title";
 
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "رنگارنگ — فروشگاه آنلاین لوازم جشن و کادو" },
-      { name: "description", content: "فروشگاه آنلاین لوازم جشن، کادوهای خاص و وسایل فانتزی" },
-    ],
-  }),
-  component: Home,
-});
-
-function Home() {
+export default function Home() {
+  usePageTitle(
+    "رنگارنگ — فروشگاه آنلاین لوازم جشن و کادو",
+    "فروشگاه آنلاین لوازم جشن، کادوهای خاص و وسایل فانتزی",
+  );
   const [featured, setFeatured] = useState<ProductRow[]>([]);
   useEffect(() => {
-    supabase.from("products").select("*").eq("is_featured", true).limit(8)
+    supabase
+      .from("products")
+      .select("*")
+      .eq("is_featured", true)
+      .limit(8)
       .then(({ data }) => setFeatured((data as ProductRow[]) ?? []));
   }, []);
 
   return (
     <div>
-      {/* HERO */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-soft" />
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-primary/30 blur-3xl" />
@@ -42,17 +40,22 @@ function Home() {
             فروشگاه آنلاین لوازم جشن، کادوهای خاص و وسایل فانتزی
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link to="/products" className="px-7 py-3.5 rounded-full bg-gradient-festive text-primary-foreground font-bold shadow-festive hover:scale-105 transition">
+            <Link
+              to="/products"
+              className="px-7 py-3.5 rounded-full bg-gradient-festive text-primary-foreground font-bold shadow-festive hover:scale-105 transition"
+            >
               مشاهده محصولات
             </Link>
-            <Link to="/checkout" className="px-7 py-3.5 rounded-full bg-card border-2 border-primary/20 font-bold hover:border-primary transition">
+            <Link
+              to="/checkout"
+              className="px-7 py-3.5 rounded-full bg-card border-2 border-primary/20 font-bold hover:border-primary transition"
+            >
               سبد خرید
             </Link>
           </div>
         </div>
       </section>
 
-      {/* FEATURES */}
       <section className="container mx-auto px-4 py-12 grid md:grid-cols-3 gap-4">
         {[
           { icon: PartyPopper, t: "لوازم جشن", d: "از بادکنک تا کیک تولد" },
@@ -71,17 +74,20 @@ function Home() {
         ))}
       </section>
 
-      {/* FEATURED PRODUCTS */}
       <section className="container mx-auto px-4 py-12">
         <div className="flex items-end justify-between mb-8">
           <div>
             <h2 className="text-3xl font-black mb-2">پرفروش‌ترین‌ها</h2>
             <p className="text-muted-foreground">منتخبی از بهترین محصولات فروشگاه</p>
           </div>
-          <Link to="/products" className="text-sm font-bold text-primary hover:underline">مشاهده همه ←</Link>
+          <Link to="/products" className="text-sm font-bold text-primary hover:underline">
+            مشاهده همه ←
+          </Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-          {featured.map((p) => <ProductCard key={p.id} p={p} />)}
+          {featured.map((p) => (
+            <ProductCard key={p.id} p={p} />
+          ))}
         </div>
       </section>
     </div>
